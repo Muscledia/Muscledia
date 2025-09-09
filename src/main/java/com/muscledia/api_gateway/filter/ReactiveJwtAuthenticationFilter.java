@@ -18,7 +18,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 
-@Component
+//@Component
 public class ReactiveJwtAuthenticationFilter implements GlobalFilter, Ordered {
 
     private static final Logger logger = LoggerFactory.getLogger(ReactiveJwtAuthenticationFilter.class);
@@ -26,23 +26,25 @@ public class ReactiveJwtAuthenticationFilter implements GlobalFilter, Ordered {
     @Autowired
     private JwtUtil jwtUtil;
 
-    @Value("${application.security.jwt.header}")
+    @Value("${jwt.header}")
     private String tokenHeader;
 
-    @Value("${application.security.jwt.prefix}")
+    @Value("$jwt.prefix}")
     private String tokenPrefix;
 
     private static final List<String> EXCLUDED_PATHS = List.of(
             "/api/users/login",
             "/api/users/register",
-            "/actuator/health"
+            "/actuator/health",
+            "/gateway/health"
     );
 
     private static final List<String> PUBLIC_READ_PATHS = List.of(
             "/api/v1/exercises",
             "/api/v1/muscle-groups",
             "/api/v1/workout-plans/public",
-            "/api/v1/routine-folders/public"
+            "/api/v1/routine-folders/public",
+            "/api/gamification/**"
     );
 
     @Override
