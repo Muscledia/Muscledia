@@ -1,126 +1,101 @@
-spring:
-  application:
-    name: api-gateway
-  cloud:
-    gateway:
-      mvc:
-        routes:
-          # Authentication routes (User Service)
-          - id: auth_route
-            uri: lb://muscledia-user-service
-            predicates:
-              - Path=/api/v1/auth/**
-
-          # User Gamification Management routes (Gamification Service)
-          # Note: These MUST come before general user routes to avoid conflicts
-          - id: user_gamification_profile_route
-            uri: lb://gamification-service
-            predicates:
-              - Path=/api/users/{userId}/profile
-          - id: user_gamification_streaks_route
-            uri: lb://gamification-service
-            predicates:
-              - Path=/api/users/{userId}/streaks/**
-          - id: user_gamification_rank_route
-            uri: lb://gamification-service
-            predicates:
-              - Path=/api/users/{userId}/rank/**
-          - id: user_gamification_achievements_route
-            uri: lb://gamification-service
-            predicates:
-              - Path=/api/users/{userId}/achievements
-          - id: user_gamification_leaderboards_route
-            uri: lb://gamification-service
-            predicates:
-              - Path=/api/users/leaderboards/**
-
-          # User Management routes (User Service - General user operations)
-          - id: user_management_route
-            uri: lb://muscledia-user-service
-            predicates:
-              - Path=/api/v1/users/**
-
-          # Admin Data Population routes (Workout Service - Admin only)
-          - id: admin_data_route
-            uri: lb://muscledia-workout-service
-            predicates:
-              - Path=/api/admin/data/**
-
-          # Exercise Management routes (Workout Service)
-          - id: exercise_route
-            uri: lb://muscledia-workout-service
-            predicates:
-              - Path=/api/v1/exercises/**
-
-          # Muscle Groups routes (Workout Service)
-          - id: muscle_groups_route
-            uri: lb://muscledia-workout-service
-            predicates:
-              - Path=/api/v1/muscle-groups/**
-
-          # Routine Folders routes (Workout Service)
-          - id: routine_folders_route
-            uri: lb://muscledia-workout-service
-            predicates:
-              - Path=/api/v1/routine-folders/**
-
-          # Workout Plans routes (Workout Service)
-          - id: workout_plans_route
-            uri: lb://muscledia-workout-service
-            predicates:
-              - Path=/api/v1/workout-plans/**
-
-          # Workouts routes (Workout Service)
-          - id: workouts_route
-            uri: lb://muscledia-workout-service
-            predicates:
-              - Path=/api/v1/workouts/**
-
-          # Analytics routes (Workout Service - Requires Authentication)
-          - id: analytics_route
-            uri: lb://muscledia-workout-service
-            predicates:
-              - Path=/api/v1/analytics/**
-
-          # Badge Management routes (Gamification Service)
-          - id: badges_route
-            uri: lb://gamification-service
-            predicates:
-              - Path=/api/badges/**
-
-          # Champions routes (Gamification Service)
-          - id: champions_route
-            uri: lb://gamification-service
-            predicates:
-              - Path=/api/champions/**
-
-          # Quests routes (Gamification Service)
-          - id: quests_route
-            uri: lb://gamification-service
-            predicates:
-              - Path=/api/quests/**
-
 server:
   port: 8080
 
-application:
-  security:
-    jwt:
-      secret-key: ${JWT_SECRET:1e5bf199c6450231fdd242f60485d0caadc32aa27a0d89da7174aed38326a879}
-      expiration: ${JWT_EXPIRATION:86400000} # 24 hours in milliseconds
-      header: Authorization
-      prefix: "Bearer "
+spring:
+  application:
+    name: muscledia-api-gateway
+  cloud:
+    gateway:
+      routes:
+        # User Service Routes (No Auth for login/register)
+        - id: auth-public
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/users/login,/api/users/register
+          filters:
+            - StripPrefix=0
+
+        # User Service Routes (Protected)
+#        - id: user-protected
+#          uri: http://localhost:8081
+#          predicates:
+#            - Path=/api/users/**
+#          filters:
+#            - StripPrefix=0
+#            - name: AuthenticationFilter
+#              args:
+#                enabled: true
+
+        # Workout Service Routes (Public)
+        - id: workout-public
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/v1/**
+          filters:
+            - StripPrefix=0
+
+#        # Workout Service Routes (Protected)
+#        - id: workout-protected
+#          uri: http://localhost:8082
+#          predicates:
+#            - Path=/api/v1/**
+#          filters:
+#            - StripPrefix=0
+#            - name: AuthenticationFilter
+#              args:
+#                enabled: true
+
+        # Gamification Service Routes
+        - id: gamification-route
+          uri: http://localhost:8083
+          predicates:
+            - Path=/api/gamification/**
+          filters:
+            - StripPrefix=0
+#            - name: AuthenticationFilter  # Custom filter for JWT validation
+#              args:
+#                enabled: true
+
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+        - name: Retry
+          args:
+            retries: 3
+            methods: GET,POST
+            backoff:
+              firstBackoff: 50ms
+              maxBackoff: 500ms
+
+
+
 
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
-    register-with-eureka: true
-    fetch-registry: true
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
   instance:
     prefer-ip-address: true
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "gateway,health,info"
+  endpoint:
+    gateway:
+      enabled: true
+
+
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET:81795ad725b2cadd49d27a60438415588db374020a561ae19cafebeef6339655304975b150867b21d3715e341a49271a75a7dde39776e156af0ddad50f5e6ec3}
+  expiration: ${JWT_EXPIRATION:86400000} # 24 hours in milliseconds
+  issuer: ${JWT_ISSUER:muscledia-user-service}
+  header: Authorization
+  prefix: "Bearer "
+
 logging:
   level:
+    com.muscledia.api_gateway: DEBUG
     org.springframework.cloud.gateway: DEBUG
-    com.muscledia: DEBUG
+    reactor.netty: DEBUG
