@@ -5,11 +5,17 @@ spring:
   application:
     name: muscledia-api-gateway
   cloud:
+    loadbalancer:
+      configurations: health-check  # Essential for health checks
+      health-check:
+        interval: 25s
+        path:
+          default: /actuator/health
     gateway:
       routes:
         # User Service Routes (No Auth for login/register)
         - id: auth-public
-          uri: http://localhost:8081
+          uri: lb://MUSCLEDIA-USER-SERVICE
           predicates:
             - Path=/api/users/login,/api/users/register
           filters:
@@ -28,7 +34,7 @@ spring:
 
         # Workout Service Routes (Public)
         - id: workout-public
-          uri: http://localhost:8082
+          uri: lb://MUSCLEDIA-WORKOUT-SERVICE
           predicates:
             - Path=/api/v1/**
           filters:
@@ -47,7 +53,7 @@ spring:
 
         # Gamification Service Routes
         - id: gamification-route
-          uri: http://localhost:8083
+          uri: lb://MUSCLEDIA-GAMIFICATION-SERVICE
           predicates:
             - Path=/api/gamification/**
           filters:
@@ -73,8 +79,13 @@ eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+    fetch-registry: true
+    register-with-eureka: true
+    registry-fetch-interval-seconds: 5  # Faster discovery
   instance:
     prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 10
 
 management:
   endpoints:
@@ -96,6 +107,6 @@ jwt:
 
 logging:
   level:
-    com.muscledia.api_gateway: DEBUG
     org.springframework.cloud.gateway: DEBUG
-    reactor.netty: DEBUG
+    org.springframework.cloud.netflix.eureka: DEBUG
+    org.springframework.cloud.loadbalancer: DEBUG
