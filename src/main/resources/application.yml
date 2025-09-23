@@ -15,7 +15,7 @@ spring:
       routes:
         # User Service Routes (No Auth for login/register)
         - id: auth-public
-          uri: lb://MUSCLEDIA-USER-SERVICE
+          uri: http://user-service:8081
           predicates:
             - Path=/api/users/login,/api/users/register
           filters:
@@ -34,7 +34,7 @@ spring:
 
         # Workout Service Routes (Public)
         - id: workout-public
-          uri: lb://MUSCLEDIA-WORKOUT-SERVICE
+          uri: http://workout-service:8082
           predicates:
             - Path=/api/v1/**
           filters:
@@ -53,7 +53,7 @@ spring:
 
         # Gamification Service Routes
         - id: gamification-route
-          uri: lb://MUSCLEDIA-GAMIFICATION-SERVICE
+          uri: http://gamification-service:8083
           predicates:
             - Path=/api/gamification/**
           filters:
