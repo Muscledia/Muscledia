@@ -1,0 +1,29 @@
+
+services:
+  user-service:
+    volumes:
+      - ./services/muscledia-user-service/target:/app/target
+    environment:
+      SPRING_DEVTOOLS_RESTART_ENABLED: true
+      LOGGING_LEVEL_COM_MUSCLEDIA: DEBUG
+
+  workout-service:
+    volumes:
+      - ./services/muscledia-workout-service/target:/app/target
+    environment:
+      SPRING_DEVTOOLS_RESTART_ENABLED: true
+      LOGGING_LEVEL_COM_MUSCLEDIA: DEBUG
+
+  gamification-service:
+    volumes:
+      - ./services/muscledia-gamification-service/target:/app/target
+    environment:
+      SPRING_DEVTOOLS_RESTART_ENABLED: true
+      LOGGING_LEVEL_COM_MUSCLEDIA: DEBUG
+
+  api-gateway:
+    volumes:
+      - ./services/muscledia-api-gateway/target:/app/target
+    environment:
+      SPRING_DEVTOOLS_RESTART_ENABLED: true
+      LOGGING_LEVEL_COM_MUSCLEDIA: DEBUG

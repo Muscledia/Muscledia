@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$/services/gamification-service" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/services/muscledia-api-gateway" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/services/muscledia-service-discovery" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/services/muscledia-user-service" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/services/muscledia-workout-service" vcs="Git" />
+  </component>
+</project>
