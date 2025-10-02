@@ -50,10 +50,19 @@ services:
       - "27017:27017"
     volumes:
       - mongodb-data:/data/db
+      - ./config/mongodb/mongo-keyfile:/tmp/mongo-keyfile:ro
     networks:
       - muscledia-network
+    entrypoint: >
+      bash -c "
+        mkdir -p /opt/keyfile &&
+        cp /tmp/mongo-keyfile /opt/keyfile/mongo-keyfile &&
+        chmod 600 /opt/keyfile/mongo-keyfile &&
+        chown mongodb:mongodb /opt/keyfile/mongo-keyfile &&
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --auth --keyFile /opt/keyfile/mongo-keyfile
+      "
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -205,14 +214,14 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8082
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-discovery:8761/eureka
-      SPRING_DATA_MONGODB_URI: mongodb://admin:secure_mongo_password_123@mongodb:27017/muscledia_workouts?authSource=admin
+      SPRING_DATA_MONGODB_URI: mongodb://admin:secure_mongo_password_123@mongodb:27017/muscledia_workouts?authSource=admin&replicaSet=rs0
       JWT_SECRET: 81795ad725b2cadd49d27a60438415588db374020a561ae19cafebeef6339655304975b150867b21d3715e341a49271a75a7dde39776e156af0ddad50f5e6ec3
       USER_SERVICE_URL: http://user-service:8081
     ports:
       - "8082:8082"
     depends_on:
-      mongodb:
-        condition: service_healthy
+      mongodb-setup:
+        condition: service_completed_successfully
       service-discovery:
         condition: service_healthy
     networks:
@@ -234,14 +243,14 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8083
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-discovery:8761/eureka
-      SPRING_DATA_MONGODB_URI: mongodb://admin:secure_mongo_password_123@mongodb:27017/gamification_db?authSource=admin
+      SPRING_DATA_MONGODB_URI: mongodb://admin:secure_mongo_password_123@mongodb:27017/gamification_db?authSource=admin&replicaSet=rs0
       JWT_SECRET: 81795ad725b2cadd49d27a60438415588db374020a561ae19cafebeef6339655304975b150867b21d3715e341a49271a75a7dde39776e156af0ddad50f5e6ec3
       USER_SERVICE_URL: http://user-service:8081
     ports:
       - "8083:8083"
     depends_on:
-      mongodb:
-        condition: service_healthy
+      mongodb-setup:
+        condition: service_completed_successfully
       service-discovery:
         condition: service_healthy
     networks:
@@ -267,5 +276,37 @@ services:
       - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf
     depends_on:
       - api-gateway
+    networks:
+      - muscledia-network
+
+
+  mongodb-setup:
+    image: mongo:6.0
+    container_name: muscledia-mongodb-setup
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    command: >
+      bash -c "
+        echo 'Waiting for MongoDB...' &&
+        until mongosh --host mongodb:27017 --eval 'print(\"ready\")' > /dev/null 2>&1; do sleep 2; done &&
+        echo 'Initializing replica set...' &&
+        mongosh --host mongodb:27017 -u admin -p secure_mongo_password_123 --authenticationDatabase admin --eval '
+        try {
+          rs.status();
+          print(\"Replica set already initialized\");
+        } catch(e) {
+          rs.initiate({
+            _id: \"rs0\",
+            members: [{ _id: 0, host: \"mongodb:27017\" }]
+          });
+          while(rs.status().myState !== 1) { 
+            print(\"Waiting for primary...\"); 
+            sleep(1000); 
+          }
+          print(\"Replica set initialized\");
+        }' &&
+        echo 'Setup complete!'
+      "
     networks:
       - muscledia-network
