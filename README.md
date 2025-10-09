@@ -49,11 +49,48 @@ A comprehensive microservices-based fitness platform that transforms workouts in
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/eric-muganga/Muscledia.git
+# Clone parent repo with all microservices
+git clone --recursive https://github.com/eric-muganga/Muscledia.git
 cd Muscledia
+
+# Verify submodules are loaded
+git submodule status
 ```
 
-### 2. Start Infrastructure
+**If you already cloned without `--recursive`:**
+```bash
+git submodule update --init --recursive
+```
+
+### 2️. Setup MongoDB Keyfile
+
+**Windows (PowerShell):**
+```powershell
+.\setup-mongodb-keyfile.ps1
+```
+
+**If you get permission errors on Windows:**
+```powershell
+# Remove and recreate directory without read-only
+Remove-Item -Path .\config\mongodb -Recurse -Force
+New-Item -ItemType Directory -Force -Path .\config\mongodb
+$folder = Get-Item .\config\mongodb
+$folder.Attributes = $folder.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
+
+# Generate keyfile
+$bytes = New-Object byte[] 756
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+$base64 = [Convert]::ToBase64String($bytes)
+$base64 | Out-File -FilePath .\config\mongodb\mongo-keyfile -Encoding ASCII -NoNewline
+$rng.Dispose()
+
+# Verify creation
+Test-Path .\config\mongodb\mongo-keyfile
+```
+
+
+### 3. Start Infrastructure
 ```bash
 # Start all services with Docker Compose
 docker-compose up --build -d
@@ -62,7 +99,7 @@ docker-compose up --build -d
 docker-compose up --build
 ```
 
-### 3. Verify Services
+### 4. Verify Services
 ```bash
 # Check service health
 docker-compose ps
@@ -74,7 +111,7 @@ curl http://localhost:8080/actuator/health
 open http://localhost:8761
 ```
 
-### 4. Test Authentication
+### 5. Test Authentication
 ```bash
 # Register a user
 curl -X POST http://localhost:8080/api/users/register \
