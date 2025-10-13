@@ -239,6 +239,7 @@ services:
     container_name: muscledia-gamification-service
     restart: unless-stopped
     environment:
+      MONGODB_ENABLED: "true"
       KAFKA_SERVERS: broker:29092
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8083
