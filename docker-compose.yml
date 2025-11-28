@@ -218,6 +218,7 @@ services:
       SPRING_DATA_MONGODB_URI: mongodb://admin:secure_mongo_password_123@mongodb:27017/muscledia_workouts?authSource=admin&replicaSet=rs0
       JWT_SECRET: 81795ad725b2cadd49d27a60438415588db374020a561ae19cafebeef6339655304975b150867b21d3715e341a49271a75a7dde39776e156af0ddad50f5e6ec3
       USER_SERVICE_URL: http://user-service:8081
+      RAPIDAPI_KEY: d84907de2cmshe11f68accc8
     ports:
       - "8082:8082"
     depends_on:
