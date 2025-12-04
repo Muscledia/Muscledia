@@ -3,6 +3,7 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/services/gamification-service" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/services/muscledia-ai-service" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/services/muscledia-api-gateway" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/services/muscledia-service-discovery" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/services/muscledia-user-service" vcs="Git" />
