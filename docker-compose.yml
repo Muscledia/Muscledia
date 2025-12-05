@@ -122,27 +122,9 @@ services:
   # INFRASTRUCTURE SERVICES
   # ===========================================
 
-  # Docker Model Runner Proxy
-  # This proxy service allows containerized services to access Docker Model Runner
-  # Docker Model Runner must be enabled on the host with: docker desktop enable model-runner --tcp 12434
+  # Note: Docker Model Runner must be enabled on the host with: docker desktop enable model-runner --tcp 12434
   # The model must be pulled first: docker model pull ai/llama3.2:3B-Q4_K_M
-  model-runner:
-    image: alpine/socat:1.7.4.3-r0
-    container_name: muscledia-model-runner-proxy
-    restart: unless-stopped
-    command: TCP-LISTEN:12434,fork,reuseaddr TCP-CONNECT:host.docker.internal:12434
-    ports:
-      - "12434:12434"
-    networks:
-      - muscledia-network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 1 sh -c 'echo > /dev/tcp/localhost/12434' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
+  # Services connect directly to host.docker.internal:12434
 
   service-discovery:
     build:
@@ -300,9 +282,8 @@ services:
       JWT_SECRET: 81795ad725b2cadd49d27a60438415588db374020a561ae19cafebeef6339655304975b150867b21d3715e341a49271a75a7dde39776e156af0ddad50f5e6ec3
       JWT_ISSUER: muscledia-user-service
       JWT_EXPIRATION: 86400000
-      # Docker Model Runner configuration
-      SPRING_AI_OPENAI_BASE_URL: http://model-runner:12434/engines 
-      # http://host.docker.internal:12434/engines for Mac M1/M2
+      # Docker Model Runner configuration - connects directly to host
+      SPRING_AI_OPENAI_BASE_URL: http://host.docker.internal:12434/engines
       SPRING_AI_OPENAI_API_KEY: ignored
       SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL: ai/llama3.2:3B-Q4_K_M
       SPRING_AI_OPENAI_CHAT_OPTIONS_TEMPERATURE: "0.5"
@@ -313,8 +294,8 @@ services:
     depends_on:
       service-discovery:
         condition: service_healthy
-      model-runner:
-        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - muscledia-network
     healthcheck:
