@@ -122,6 +122,10 @@ services:
   # INFRASTRUCTURE SERVICES
   # ===========================================
 
+  # Note: Docker Model Runner must be enabled on the host with: docker desktop enable model-runner --tcp 12434
+  # The model must be pulled first: docker model pull ai/llama3.2:3B-Q4_K_M
+  # Services connect directly to host.docker.internal:12434
+
   service-discovery:
     build:
       context: ./services/muscledia-service-discovery
@@ -260,6 +264,42 @@ services:
       - muscledia-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+
+  ai-service:
+    build:
+      context: ./services/muscledia-ai-service/muscledia-ai-service
+      dockerfile: Dockerfile
+    container_name: muscledia-ai-service
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8084
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-discovery:8761/eureka
+      JWT_SECRET: 81795ad725b2cadd49d27a60438415588db374020a561ae19cafebeef6339655304975b150867b21d3715e341a49271a75a7dde39776e156af0ddad50f5e6ec3
+      JWT_ISSUER: muscledia-user-service
+      JWT_EXPIRATION: 86400000
+      # Docker Model Runner configuration - connects directly to host
+      SPRING_AI_OPENAI_BASE_URL: http://host.docker.internal:12434/engines
+      SPRING_AI_OPENAI_API_KEY: ignored
+      SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL: ai/llama3.2:3B-Q4_K_M
+      SPRING_AI_OPENAI_CHAT_OPTIONS_TEMPERATURE: "0.5"
+      SPRING_AI_MODEL_CHAT: openai
+      SPRING_AI_MODEL_EMBEDDING_ENABLED: "false"
+    ports:
+      - "8084:8084"
+    depends_on:
+      service-discovery:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - muscledia-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8084/actuator/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
