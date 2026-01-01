@@ -1,0 +1,163 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'services/**'
+      - 'docker-compose.prod.yml'
+      - '.github/workflows/build-and-push.yml'
+  workflow_dispatch:
+
+jobs:
+  build-jars:
+    name: Build JAR Files
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: muscledia-user-service
+            path: services/muscledia-user-service
+          - name: muscledia-workout-service
+            path: services/muscledia-workout-service
+          - name: gamification-service
+            path: services/gamification-service
+          - name: muscledia-ai-service
+            path: services/muscledia-ai-service/muscledia-ai-service
+          - name: muscledia-api-gateway
+            path: services/muscledia-api-gateway
+          - name: muscledia-service-discovery
+            path: services/muscledia-service-discovery
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build ${{ matrix.service.name }}
+        run: |
+          cd ${{ matrix.service.path }}
+          mvn clean package -DskipTests
+
+      - name: Verify JAR exists
+        run: |
+          jar_file=$(find ${{ matrix.service.path }}/target -name "*.jar" -not -name "*-sources.jar" -not -name "*-javadoc.jar" | head -n 1)
+          if [ -z "$jar_file" ]; then
+            echo "JAR file not found!"
+            exit 1
+          fi
+          echo "Found JAR: $jar_file"
+          ls -lh "$jar_file"
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.service.name }}-jar
+          path: ${{ matrix.service.path }}/target/*.jar
+          retention-days: 1
+          if-no-files-found: error
+
+  docker-build-push:
+    name: Build and Push Docker Images
+    needs: build-jars
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: muscledia-user-service
+            path: services/muscledia-user-service
+            port: 8081
+          - name: muscledia-workout-service
+            path: services/muscledia-workout-service
+            port: 8082
+          - name: gamification-service
+            path: services/gamification-service
+            port: 8083
+          - name: muscledia-ai-service
+            path: services/muscledia-ai-service/muscledia-ai-service
+            port: 8084
+          - name: muscledia-api-gateway
+            path: services/muscledia-api-gateway
+            port: 8080
+          - name: muscledia-service-discovery
+            path: services/muscledia-service-discovery
+            port: 8761
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.service.name }}-jar
+          path: ${{ matrix.service.path }}/target/
+
+      - name: Verify JAR downloaded
+        run: |
+          echo "Contents of target directory:"
+          ls -lh ${{ matrix.service.path }}/target/
+          jar_count=$(find ${{ matrix.service.path }}/target -name "*.jar" | wc -l)
+          if [ "$jar_count" -eq 0 ]; then
+            echo "No JAR files found after download!"
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract version metadata
+        id: meta
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "timestamp=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+          echo "version=v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+      - name: Build and push ${{ matrix.service.name }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.path }}
+          file: ${{ matrix.service.path }}/Dockerfile.runtime
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ericmuganga/${{ matrix.service.name }}:latest
+            ericmuganga/${{ matrix.service.name }}:${{ steps.meta.outputs.version }}
+            ericmuganga/${{ matrix.service.name }}:${{ steps.meta.outputs.sha_short }}
+          build-args: |
+            SERVICE_PORT=${{ matrix.service.port }}
+          labels: |
+            org.opencontainers.image.created=${{ steps.meta.outputs.build_date }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.sha_short }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+          cache-from: type=registry,ref=ericmuganga/${{ matrix.service.name }}:latest
+          cache-to: type=inline
+          provenance: false
+
+      - name: Verify image
+        run: |
+          echo "Successfully built and pushed ${{ matrix.service.name }}"
+          echo "Tags:"
+          echo "  - latest"
+          echo "  - ${{ steps.meta.outputs.version }}"
+          echo "  - ${{ steps.meta.outputs.sha_short }}"
+          
+          docker pull ericmuganga/${{ matrix.service.name }}:latest
+          docker images | grep ${{ matrix.service.name }}

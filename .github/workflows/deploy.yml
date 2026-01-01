@@ -1,0 +1,194 @@
+name: Deploy to OCI
+
+on:
+  workflow_run:
+    workflows: ["Build and Push Docker Images"]
+    types:
+      - completed
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      skip_health_check:
+        description: 'Skip health check after deployment'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.OCI_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create deployment directory on server
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            mkdir -p ~/muscledia
+            mkdir -p ~/muscledia/config
+          EOF
+
+      - name: Upload docker-compose configuration
+        run: |
+          scp -i ~/.ssh/id_rsa \
+            docker-compose.prod.yml \
+            ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:~/muscledia/docker-compose.yml
+
+      - name: Upload configuration files
+        run: |
+          if [ -d "config" ]; then
+            scp -i ~/.ssh/id_rsa -r \
+              config/* \
+              ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:~/muscledia/config/
+          fi
+
+      - name: Pull latest images
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            cd ~/muscledia
+            echo "=========================================="
+            echo "Pulling latest Docker images..."
+            echo "=========================================="
+            docker-compose pull
+          EOF
+
+      - name: Stop old containers
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            cd ~/muscledia
+            echo "=========================================="
+            echo "Stopping old containers..."
+            echo "=========================================="
+            docker-compose down --timeout 30
+          EOF
+
+      - name: Clean up old resources
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            echo "=========================================="
+            echo "Cleaning up resources..."
+            echo "=========================================="
+            docker container prune -f
+            docker image prune -f
+          EOF
+
+      - name: Start services
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            cd ~/muscledia
+            echo "=========================================="
+            echo "Starting services..."
+            echo "=========================================="
+            docker-compose up -d
+          EOF
+
+      - name: Wait for services to initialize
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            echo "=========================================="
+            echo "Waiting for services to initialize..."
+            echo "=========================================="
+            sleep 60
+          EOF
+
+      - name: Check service status
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            cd ~/muscledia
+            echo "=========================================="
+            echo "Service Status:"
+            echo "=========================================="
+            docker-compose ps
+          EOF
+
+      - name: Health check
+        if: ${{ github.event.inputs.skip_health_check != 'true' }}
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            echo "=========================================="
+            echo "Running health checks..."
+            echo "=========================================="
+          
+            # Function to check health
+            check_health() {
+              local service=$1
+              local port=$2
+              if curl -sf http://localhost:$port/actuator/health > /dev/null 2>&1; then
+                echo "✓ $service is healthy"
+                return 0
+              else
+                echo "✗ $service health check failed"
+                return 1
+              fi
+            }
+          
+            # Check all services
+            failed=0
+          
+            check_health "User Service" 8081 || failed=1
+            check_health "Workout Service" 8082 || failed=1
+            check_health "Gamification Service" 8083 || failed=1
+            check_health "AI Service" 8084 || failed=1
+            check_health "Service Discovery" 8761 || failed=1
+            check_health "API Gateway" 8080 || failed=1
+          
+            if [ $failed -eq 1 ]; then
+              echo "=========================================="
+              echo "Some services failed health checks!"
+              echo "=========================================="
+              exit 1
+            fi
+          
+            echo "=========================================="
+            echo "All services are healthy!"
+            echo "=========================================="
+          EOF
+
+      - name: Display deployment summary
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            cd ~/muscledia
+            echo "=========================================="
+            echo "Deployment Summary"
+            echo "=========================================="
+            echo ""
+            echo "Running Containers:"
+            docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+            echo ""
+            echo "Resource Usage:"
+            docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+            echo ""
+            echo "=========================================="
+            echo "Deployment completed successfully!"
+            echo "=========================================="
+          EOF
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            cd ~/muscledia
+            echo "=========================================="
+            echo "Deployment failed - collecting logs..."
+            echo "=========================================="
+            docker-compose logs --tail=50
+          
+            echo ""
+            echo "=========================================="
+            echo "Stopping failed deployment..."
+            echo "=========================================="
+            docker-compose down
+          
+            echo ""
+            echo "Please investigate the logs and redeploy manually."
+          EOF
