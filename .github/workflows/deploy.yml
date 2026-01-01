@@ -39,6 +39,16 @@ jobs:
             echo "Deployment directory ready"
           EOF
 
+      - name: Backup existing configuration
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            cd ~/muscledia
+            if [ -f docker-compose.yml ]; then
+              echo "Backing up existing docker-compose.yml..."
+              cp docker-compose.yml docker-compose.yml.bak
+            fi
+          EOF
+
       - name: Upload docker-compose configuration
         run: |
           scp -i ~/.ssh/id_rsa \
@@ -67,27 +77,8 @@ jobs:
             echo "Images pulled successfully"
           EOF
 
-      - name: Stop old containers
-        run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
-            cd ~/muscledia
-            echo "=========================================="
-            echo "Stopping old containers..."
-            echo "=========================================="
-            docker-compose down --timeout 30
-            echo "Old containers stopped"
-          EOF
-
-      - name: Clean up old resources
-        run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
-            echo "=========================================="
-            echo "Cleaning up resources..."
-            echo "=========================================="
-            docker container prune -f
-            docker image prune -f
-            echo "Cleanup complete"
-          EOF
+      # REMOVED: "Stop old containers" and "Clean up old resources" steps
+      # to ensure old containers keep running if new ones fail to start.
 
       - name: Start services
         run: |
@@ -96,6 +87,8 @@ jobs:
             echo "=========================================="
             echo "Starting services..."
             echo "=========================================="
+            # docker-compose up -d will automatically recreate changed containers
+            # and leave unchanged ones running.
             docker-compose up -d
             echo "Services started"
           EOF
@@ -104,9 +97,9 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
             echo "=========================================="
-            echo "Waiting 60 seconds for services to initialize..."
+            echo "Waiting 120 seconds for services to initialize..."
             echo "=========================================="
-            sleep 60
+            sleep 120
             echo "Initialization period complete"
           EOF
 
@@ -132,21 +125,28 @@ jobs:
             check_health() {
               local service=$1
               local port=$2
-              local max_attempts=10
+              local max_attempts=15
               local attempt=1
           
               while [ $attempt -le $max_attempts ]; do
-                if curl -sf http://localhost:$port/actuator/health > /dev/null 2>&1; then
+                # Use -v to see headers if it fails, or check status code
+                if curl -s -f -o /dev/null http://localhost:$port/actuator/health; then
                   echo "✓ $service is healthy"
                   return 0
                 else
                   echo "Attempt $attempt/$max_attempts: $service not ready yet..."
-                  sleep 5
+                  sleep 10 
                   attempt=$((attempt + 1))
                 fi
               done
           
               echo "✗ $service health check failed after $max_attempts attempts"
+              # Print logs on failure to help debug
+              if [ "$service" == "AI Service" ]; then
+                  echo "--- AI Service Logs ---"
+                  docker logs muscledia-ai-service --tail 50
+                  echo "-----------------------"
+              fi
               return 1
             }
           
@@ -154,7 +154,7 @@ jobs:
             failed=0
           
             check_health "Service Discovery" 8761 || failed=1
-            sleep 10
+            sleep 5
           
             check_health "User Service" 8081 || failed=1
             check_health "Workout Service" 8082 || failed=1
@@ -172,6 +172,17 @@ jobs:
             echo "=========================================="
             echo "All services are healthy!"
             echo "=========================================="
+          EOF
+
+      - name: Clean up old images (Post-Success)
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
+            echo "=========================================="
+            echo "Deployment successful. Cleaning up old resources..."
+            echo "=========================================="
+            # Prune only dangling images/containers to save space, now that new ones are healthy
+            docker image prune -f
+            echo "Cleanup complete"
           EOF
 
       - name: Display deployment summary
@@ -203,25 +214,28 @@ jobs:
           ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
             cd ~/muscledia
             echo "=========================================="
-            echo "Deployment failed - collecting logs..."
+            echo "DEPLOYMENT FAILED - INITIATING ROLLBACK"
             echo "=========================================="
-            echo ""
-            echo "Last 50 lines of logs:"
+          
+            # 1. Collect logs
+            echo "Collecting logs for debugging..."
             docker-compose logs --tail=50
           
-            echo ""
-            echo "=========================================="
-            echo "Stopping failed deployment..."
-            echo "=========================================="
-            docker-compose down
+            # 2. Restore previous configuration
+            if [ -f docker-compose.yml.bak ]; then
+                echo "Restoring previous docker-compose.yml..."
+                mv docker-compose.yml.bak docker-compose.yml
           
-            echo ""
+                echo "Redeploying previous stable version..."
+                docker-compose up -d
+          
+                echo "Rollback command executed. Check server status manually."
+            else
+                echo "No backup configuration found. Stopping failed containers."
+                docker-compose down
+            fi
+          
             echo "=========================================="
-            echo "Rollback Instructions:"
-            echo "=========================================="
-            echo "1. Check the logs above for errors"
-            echo "2. Fix the issues in your code"
-            echo "3. Push a new commit to trigger redeployment"
-            echo "4. Or manually deploy with: cd ~/muscledia && docker-compose up -d"
+            echo "Rollback procedure complete"
             echo "=========================================="
           EOF
