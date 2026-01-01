@@ -14,13 +14,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service:
-          - muscledia-user-service
-          - muscledia-workout-service
-          - gamification-service
-          - muscledia-ai-service/muscledia-ai-service
-          - muscledia-api-gateway
-          - muscledia-service-discovery
+        include:
+          - service: muscledia-user-service
+            working-directory: services/muscledia-user-service
+          - service: muscledia-workout-service
+            working-directory: services/muscledia-workout-service
+          - service: gamification-service
+            working-directory: services/gamification-service
+          - service: muscledia-ai-service
+            working-directory: services/muscledia-ai-service/muscledia-ai-service
+          - service: muscledia-api-gateway
+            working-directory: services/muscledia-api-gateway
+          - service: muscledia-service-discovery
+            working-directory: services/muscledia-service-discovery
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.working-directory }}
 
     steps:
       - name: Checkout code
@@ -34,16 +44,14 @@ jobs:
           cache: 'maven'
 
       - name: Run tests for ${{ matrix.service }}
-        run: |
-          cd services/${{ matrix.service }}
-          mvn clean test
+        run: mvn clean test
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.service }}
-          path: services/${{ matrix.service }}/target/surefire-reports/
+          path: ${{ matrix.working-directory }}/target/surefire-reports/
           retention-days: 7
 
   code-quality:
@@ -61,20 +69,18 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Run Maven verify
+      - name: Verify all services
         run: |
           services=(
-            "muscledia-user-service"
-            "muscledia-workout-service"
-            "gamification-service"
-            "muscledia-ai-service/muscledia-ai-service"
-            "muscledia-api-gateway"
-            "muscledia-service-discovery"
+            "services/muscledia-user-service"
+            "services/muscledia-workout-service"
+            "services/gamification-service"
+            "services/muscledia-ai-service/muscledia-ai-service"
+            "services/muscledia-api-gateway"
+            "services/muscledia-service-discovery"
           )
           
           for service in "${services[@]}"; do
             echo "Verifying $service..."
-            cd services/$service
-            mvn clean verify -DskipTests
-            cd ../../..
+            (cd "$service" && mvn clean verify -DskipTests)
           done
