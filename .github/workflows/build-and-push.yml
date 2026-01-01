@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service:
+        include:
           - name: muscledia-user-service
             path: services/muscledia-user-service
           - name: muscledia-workout-service
@@ -40,28 +40,34 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: 'maven'
 
-      - name: Build ${{ matrix.service.name }}
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Build ${{ matrix.name }}
         run: |
-          cd ${{ matrix.service.path }}
+          cd ${{ matrix.path }}
           mvn clean package -DskipTests
 
       - name: Verify JAR exists
         run: |
-          jar_file=$(find ${{ matrix.service.path }}/target -name "*.jar" -not -name "*-sources.jar" -not -name "*-javadoc.jar" | head -n 1)
-          if [ -z "$jar_file" ]; then
+          if [ ! -f ${{ matrix.path }}/target/*.jar ]; then
             echo "JAR file not found!"
+            ls -la ${{ matrix.path }}/target/
             exit 1
           fi
-          echo "Found JAR: $jar_file"
-          ls -lh "$jar_file"
+          echo "JAR files found:"
+          ls -lh ${{ matrix.path }}/target/*.jar
 
       - name: Upload JAR artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.service.name }}-jar
-          path: ${{ matrix.service.path }}/target/*.jar
+          name: ${{ matrix.name }}-jar
+          path: ${{ matrix.path }}/target/*.jar
           retention-days: 1
           if-no-files-found: error
 
@@ -73,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service:
+        include:
           - name: muscledia-user-service
             path: services/muscledia-user-service
             port: 8081
@@ -100,18 +106,19 @@ jobs:
       - name: Download JAR artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.service.name }}-jar
-          path: ${{ matrix.service.path }}/target/
+          name: ${{ matrix.name }}-jar
+          path: ${{ matrix.path }}/target/
 
       - name: Verify JAR downloaded
         run: |
           echo "Contents of target directory:"
-          ls -lh ${{ matrix.service.path }}/target/
-          jar_count=$(find ${{ matrix.service.path }}/target -name "*.jar" | wc -l)
+          ls -lh ${{ matrix.path }}/target/
+          jar_count=$(find ${{ matrix.path }}/target -name "*.jar" -type f | wc -l)
           if [ "$jar_count" -eq 0 ]; then
             echo "No JAR files found after download!"
             exit 1
           fi
+          echo "Found $jar_count JAR file(s)"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -130,34 +137,31 @@ jobs:
           echo "version=v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
-      - name: Build and push ${{ matrix.service.name }}
+      - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v5
         with:
-          context: ${{ matrix.service.path }}
-          file: ${{ matrix.service.path }}/Dockerfile.runtime
+          context: ${{ matrix.path }}
+          file: ${{ matrix.path }}/Dockerfile.runtime
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ericmuganga/${{ matrix.service.name }}:latest
-            ericmuganga/${{ matrix.service.name }}:${{ steps.meta.outputs.version }}
-            ericmuganga/${{ matrix.service.name }}:${{ steps.meta.outputs.sha_short }}
+            ericmuganga/${{ matrix.name }}:latest
+            ericmuganga/${{ matrix.name }}:${{ steps.meta.outputs.version }}
+            ericmuganga/${{ matrix.name }}:${{ steps.meta.outputs.sha_short }}
           build-args: |
-            SERVICE_PORT=${{ matrix.service.port }}
+            SERVICE_PORT=${{ matrix.port }}
           labels: |
             org.opencontainers.image.created=${{ steps.meta.outputs.build_date }}
             org.opencontainers.image.revision=${{ steps.meta.outputs.sha_short }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
-          cache-from: type=registry,ref=ericmuganga/${{ matrix.service.name }}:latest
+          cache-from: type=registry,ref=ericmuganga/${{ matrix.name }}:latest
           cache-to: type=inline
           provenance: false
 
       - name: Verify image
         run: |
-          echo "Successfully built and pushed ${{ matrix.service.name }}"
+          echo "Successfully built and pushed ${{ matrix.name }}"
           echo "Tags:"
           echo "  - latest"
           echo "  - ${{ steps.meta.outputs.version }}"
           echo "  - ${{ steps.meta.outputs.sha_short }}"
-          
-          docker pull ericmuganga/${{ matrix.service.name }}:latest
-          docker images | grep ${{ matrix.service.name }}
