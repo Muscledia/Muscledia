@@ -22,7 +22,7 @@ jobs:
           - service: gamification-service
             path: services/gamification-service
           - service: muscledia-ai-service
-            path: services/muscledia-ai-service
+            path: services/muscledia-ai-service/muscledia-ai-service
           - service: muscledia-api-gateway
             path: services/muscledia-api-gateway
           - service: muscledia-service-discovery
@@ -91,7 +91,7 @@ jobs:
 
       - name: Verify AI Service
         run: |
-          cd services/muscledia-ai-service
+          cd services/muscledia-ai-service/muscledia-ai-service
           mvn clean verify -DskipTests
 
       - name: Verify API Gateway
