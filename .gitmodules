@@ -1,15 +1,18 @@
 [submodule "services/gamification-service"]
-	path = services/gamification-service
-	url = https://github.com/eric-muganga/gamification-service.git
+    path = services/gamification-service
+    url = https://github.com/Muscledia/gamification-service.git
 [submodule "services/muscledia-service-discovery"]
-	path = services/muscledia-service-discovery
-	url = https://github.com/eric-muganga/muscledia-service-discovery.git
+    path = services/muscledia-service-discovery
+    url = https://github.com/Muscledia/muscledia-service-discovery.git
 [submodule "services/muscledia-user-service"]
-	path = services/muscledia-user-service
-	url = https://github.com/eric-muganga/muscledia-user-service.git
+    path = services/muscledia-user-service
+    url = https://github.com/Muscledia/muscledia-user-service.git
 [submodule "services/muscledia-workout-service"]
-	path = services/muscledia-workout-service
-	url = https://github.com/eric-muganga/muscledia-workout-service.git
+    path = services/muscledia-workout-service
+    url = https://github.com/Muscledia/muscledia-workout-service.git
 [submodule "services/muscledia-api-gateway"]
-	path = services/muscledia-api-gateway
-	url = https://github.com/eric-muganga/muscledia-api-gateway.git
+    path = services/muscledia-api-gateway
+    url = https://github.com/Muscledia/muscledia-api-gateway.git
+[submodule "services/muscledia-ai-service"]
+    path = services/muscledia-ai-service
+    url = https://github.com/Muscledia/muscledia-ai-service.git
