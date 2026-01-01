@@ -43,7 +43,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # FIX: Use a Personal Access Token (PAT) to access private submodules
+          # Default GITHUB_TOKEN cannot access other private repos in the org
+          token: ${{ secrets.SUBMODULE_PAT }}
 
       - name: Verify submodule checked out
         run: |
