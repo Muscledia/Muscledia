@@ -11,7 +11,7 @@ on:
       skip_health_check:
         description: 'Skip health check after deployment'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 jobs:
@@ -36,6 +36,7 @@ jobs:
           ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
             mkdir -p ~/muscledia
             mkdir -p ~/muscledia/config
+            echo "Deployment directory ready"
           EOF
 
       - name: Upload docker-compose configuration
@@ -43,13 +44,16 @@ jobs:
           scp -i ~/.ssh/id_rsa \
             docker-compose.prod.yml \
             ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:~/muscledia/docker-compose.yml
+          echo "Docker compose configuration uploaded"
 
       - name: Upload configuration files
         run: |
           if [ -d "config" ]; then
             scp -i ~/.ssh/id_rsa -r \
               config/* \
-              ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:~/muscledia/config/
+              ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:~/muscledia/config/ || echo "No config files to upload"
+          else
+            echo "No config directory found, skipping"
           fi
 
       - name: Pull latest images
@@ -60,6 +64,7 @@ jobs:
             echo "Pulling latest Docker images..."
             echo "=========================================="
             docker-compose pull
+            echo "Images pulled successfully"
           EOF
 
       - name: Stop old containers
@@ -70,6 +75,7 @@ jobs:
             echo "Stopping old containers..."
             echo "=========================================="
             docker-compose down --timeout 30
+            echo "Old containers stopped"
           EOF
 
       - name: Clean up old resources
@@ -80,6 +86,7 @@ jobs:
             echo "=========================================="
             docker container prune -f
             docker image prune -f
+            echo "Cleanup complete"
           EOF
 
       - name: Start services
@@ -90,15 +97,17 @@ jobs:
             echo "Starting services..."
             echo "=========================================="
             docker-compose up -d
+            echo "Services started"
           EOF
 
       - name: Wait for services to initialize
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
             echo "=========================================="
-            echo "Waiting for services to initialize..."
+            echo "Waiting 60 seconds for services to initialize..."
             echo "=========================================="
             sleep 60
+            echo "Initialization period complete"
           EOF
 
       - name: Check service status
@@ -112,7 +121,7 @@ jobs:
           EOF
 
       - name: Health check
-        if: ${{ github.event.inputs.skip_health_check != 'true' }}
+        if: ${{ !inputs.skip_health_check }}
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }} << 'EOF'
             echo "=========================================="
@@ -123,23 +132,34 @@ jobs:
             check_health() {
               local service=$1
               local port=$2
-              if curl -sf http://localhost:$port/actuator/health > /dev/null 2>&1; then
-                echo "✓ $service is healthy"
-                return 0
-              else
-                echo "✗ $service health check failed"
-                return 1
-              fi
+              local max_attempts=10
+              local attempt=1
+          
+              while [ $attempt -le $max_attempts ]; do
+                if curl -sf http://localhost:$port/actuator/health > /dev/null 2>&1; then
+                  echo "✓ $service is healthy"
+                  return 0
+                else
+                  echo "Attempt $attempt/$max_attempts: $service not ready yet..."
+                  sleep 5
+                  attempt=$((attempt + 1))
+                fi
+              done
+          
+              echo "✗ $service health check failed after $max_attempts attempts"
+              return 1
             }
           
             # Check all services
             failed=0
           
+            check_health "Service Discovery" 8761 || failed=1
+            sleep 10
+          
             check_health "User Service" 8081 || failed=1
             check_health "Workout Service" 8082 || failed=1
             check_health "Gamification Service" 8083 || failed=1
             check_health "AI Service" 8084 || failed=1
-            check_health "Service Discovery" 8761 || failed=1
             check_health "API Gateway" 8080 || failed=1
           
             if [ $failed -eq 1 ]; then
@@ -171,6 +191,10 @@ jobs:
             echo "=========================================="
             echo "Deployment completed successfully!"
             echo "=========================================="
+            echo "Access your services at:"
+            echo "  - API Gateway: http://89.168.117.65:8080"
+            echo "  - Eureka Dashboard: http://89.168.117.65:8761"
+            echo "=========================================="
           EOF
 
       - name: Rollback on failure
@@ -181,6 +205,8 @@ jobs:
             echo "=========================================="
             echo "Deployment failed - collecting logs..."
             echo "=========================================="
+            echo ""
+            echo "Last 50 lines of logs:"
             docker-compose logs --tail=50
           
             echo ""
@@ -190,5 +216,12 @@ jobs:
             docker-compose down
           
             echo ""
-            echo "Please investigate the logs and redeploy manually."
+            echo "=========================================="
+            echo "Rollback Instructions:"
+            echo "=========================================="
+            echo "1. Check the logs above for errors"
+            echo "2. Fix the issues in your code"
+            echo "3. Push a new commit to trigger redeployment"
+            echo "4. Or manually deploy with: cd ~/muscledia && docker-compose up -d"
+            echo "=========================================="
           EOF
